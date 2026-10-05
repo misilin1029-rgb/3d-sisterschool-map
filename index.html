@@ -1,0 +1,2648 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>全球姊妹校 3D 互動地圖 - 柔光雲霧風</title>
+  
+  <!-- 載入 3D 地球套件 Globe.gl -->
+  <script src="//unpkg.com/globe.gl"></script>
+
+<style>
+    * {
+      box-sizing: border-box;
+    }
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #050811;
+    }
+
+    /* 🎨 抽象雲霧與光斑（Ambient Smoke & Bokeh Effect） */
+    .ambient-background {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    /* 光斑 1：主色調（柔和藍紫色雲霧） */
+    .glow-blob-1 {
+      position: absolute;
+      top: 15%;
+      left: 20%;
+      width: 50vw;
+      height: 50vw;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, rgba(0,0,0,0) 70%);
+      filter: blur(80px);
+      border-radius: 50%;
+      animation: floatGlow1 18s ease-in-out infinite alternate;
+    }
+
+    /* 光斑 2：次色調（深青藍綠色光波） */
+    .glow-blob-2 {
+      position: absolute;
+      bottom: 10%;
+      right: 15%;
+      width: 55vw;
+      height: 55vw;
+      background: radial-gradient(circle, rgba(14, 165, 233, 0.2) 0%, rgba(0,0,0,0) 70%);
+      filter: blur(100px);
+      border-radius: 50%;
+      animation: floatGlow2 22s ease-in-out infinite alternate;
+    }
+
+    /* 光斑 3：夢幻紫紅微光 */
+    .glow-blob-3 {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 40vw;
+      height: 40vw;
+      background: radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, rgba(0,0,0,0) 65%);
+      filter: blur(90px);
+      border-radius: 50%;
+    }
+
+    /* 雲霧緩慢飄動動畫 */
+    @keyframes floatGlow1 {
+      0% { transform: translate(0px, 0px) scale(1); }
+      100% { transform: translate(60px, -40px) scale(1.15); }
+    }
+    @keyframes floatGlow2 {
+      0% { transform: translate(0px, 0px) scale(1); }
+      100% { transform: translate(-50px, 30px) scale(1.1); }
+    }
+
+    /* 3D 地球容器 */
+    #globeViz {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+
+   /* 發光圓點樣式 */
+        .marker-dot {
+            width: 10px; 
+            height: 10px;
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        /* 由 Globe.gl 的 Tooltip 處理懸停 */
+        .marker-dot:hover {
+            transform: scale(1.6);
+        }
+
+  /* 定位時的動態高亮動畫 */
+@keyframes markerPulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.9);
+  }
+  70% {
+    transform: scale(2.2);
+    box-shadow: 0 0 0 15px rgba(255, 255, 255, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0);
+  }
+}
+
+  /* 觸動高亮的 Class */
+.globe-marker.active-focus {
+  z-index: 10000 !important;
+}
+
+.globe-marker.active-focus .marker-dot {
+  animation: markerPulse 1.2s infinite ease-in-out;
+  border-color: #ffffff;
+}
+
+.globe-marker.active-focus .marker-tooltip {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+
+
+    /* 🎨 左側側邊欄控制面板 */
+    .sidebar {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      width: 380px;
+      max-height: calc(100vh - 40px);
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 20px;
+      border-radius: 16px;
+      color: #ffffff;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .sidebar h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #38bdf8;
+    }
+
+    .sidebar p {
+      margin: 0 0 14px 0;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+
+    /* 🌐 雙語切換按鈕 */
+    .lang-btn {
+      background: rgba(56, 189, 248, 0.15);
+      border: 1px solid rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .lang-btn:hover {
+      background: #38bdf8;
+      color: #0f172a;
+    }
+
+    /* 搜尋輸入框 */
+    .search-box {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      font-size: 13px;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    .search-box::placeholder {
+      color: #64748b;
+    }
+
+    /* 學校列表選單 */
+    .school-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto;
+      max-height: 300px;
+    }
+
+    .school-item {
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .school-item:hover {
+      background: rgba(56, 189, 248, 0.15);
+      border-color: rgba(56, 189, 248, 0.4);
+      transform: translateX(4px);
+    }
+
+    .school-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .school-name {
+      font-size: 13px;
+      font-weight: 500;
+      color: #ffffff;
+    }
+
+    .school-subname {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .school-country {
+      font-size: 11px;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+
+    .globe-marker {
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .globe-marker:hover {
+      transform: scale(1.2);
+    }
+
+
+  /* 🌐 下拉選單主題樣式修飾 */
+  select.search-box {
+    background-color: rgba(30, 41, 59, 0.9) !important; /* 深藍灰色背景 */
+    color: #ffffff !important;                         /* 純白文字 */
+    border: 1px solid rgba(255, 255, 255, 0.2);          /* 淺色微光邊框 */
+    border-radius: 6px;
+    padding: 8px;
+    outline: none;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  /* 下拉選單展開後的選項文字樣式 */
+  select.search-box option {
+    background-color: #0f172a !important;             /* 展開選單的深色背景 */
+    color: #ffffff !important;                         /* 選項文字維持白色 */
+    padding: 8px;
+  }
+
+  /* 滑鼠 Hover 時的效果 */
+  select.search-box:hover {
+    border-color: rgba(56, 189, 248, 0.6);             /* 懸停時邊框變亮藍色 */
+  }
+
+/* 地標容器定位 */
+.globe-marker {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 20px; /* 給予足夠的滑鼠觸碰區域 */
+    height: 20px;
+    overflow: visible !important; /* 關鍵：強迫讓卡片超出邊框時也能顯示 */
+    cursor: pointer;
+    pointer-events: auto !important; /* 確保滑鼠事件能精準觸發 */
+}
+
+/* 懸停彈出的提示卡片 */
+.marker-tooltip {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(5px);
+    background: rgba(15, 23, 42, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 9999 !important;
+}
+
+.marker-tooltip strong {
+    display: block;
+    color: #ffffff;
+    font-size: 13px;
+}
+
+.marker-tooltip span {
+    display: block;
+    color: #94a3b8;
+    font-size: 10px;
+    margin-top: 2px;
+}
+
+/* 滑鼠懸停時顯示卡片並放大圓點 */
+.globe-marker:hover {
+    z-index: 9999 !important;
+}
+.globe-marker:hover .marker-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.globe-marker:hover .marker-dot {
+    transform: scale(1.6);
+    box-shadow: 0 0 12px currentColor;
+}
+
+
+  </style>
+<body>
+
+  <!-- 背景動態雲霧與光斑區塊 -->
+  <div class="ambient-background">
+    <div class="glow-blob-1"></div>
+    <div class="glow-blob-2"></div>
+    <div class="glow-blob-3"></div>
+  </div>
+
+  <!-- UI 介面 -->
+  <!-- 左側雙語側邊欄 -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1 id="titleText">全球姊妹校地圖</h1>
+      <button class="lang-btn" onclick="toggleLanguage()" id="langBtn">EN</button>
+    </div>
+    <p id="subTitleText">點擊學校名稱可自動平滑定位</p>
+    
+<!-- 🌐 洲別、國家、範圍選單區塊 (採用 2x2 網格排列) -->
+    <div class="filter-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
+      <!-- 第一行左：洲別篩選 -->
+      <select id="continentSelect" class="search-box" style="margin-bottom: 0;" onchange="onContinentChange()">
+        <option value="">所有洲別</option>
+        <option value="亞洲">亞洲</option>
+        <option value="美洲">美洲</option>
+        <option value="歐洲">歐洲</option>
+        <option value="大洋洲">大洋洲</option>
+        <option value="非洲">非洲</option>
+      </select>
+
+      <!-- 第一行右：國家/地區篩選 -->
+      <select id="countrySelect" class="search-box" style="margin-bottom: 0;" onchange="filterSchools()">
+        <option value="">所有國家/地區</option>
+      </select>
+
+      <!-- 第二行左：合作類型篩選 -->
+      <select id="typeSelect" class="search-box" style="margin-bottom: 0;" onchange="filterSchools()">
+        <option value="">所有類型</option>
+        <option value="姊妹校">姊妹校</option>
+        <option value="海外醫療機構">海外醫療機構</option>
+        <option value="海外實習機構">海外實習機構</option>
+      </select>
+
+      <!-- 第二行右：範圍/層級篩選  -->
+      <select id="levelSelect" class="search-box" style="margin-bottom: 0;" onchange="filterSchools()">
+        <option value="">所有層級</option>
+        <option value="校級">校級</option>
+        <option value="院級">院級</option>
+        <option value="系級">系級</option>
+      </select>
+    </div>
+
+    <input type="text" id="searchInput" class="search-box" placeholder="搜尋學校或國家 / Search university..." onkeyup="filterSchools()">
+    
+    <ul class="school-list" id="schoolList">
+      <!-- 由 JavaScript 動態生成列表 -->
+    </ul>
+  </div>
+
+  <!-- 3D 地球渲染區 -->
+  <div id="globeViz"></div>
+
+  <script>
+  // 當前語言設定 ('zh' 或 'en')
+  let currentLang = 'zh';
+
+// 🌐 全球常見國家中英文對照表
+  const countryTranslations = {
+    // 亞洲地區
+    "Taiwan": "台灣",
+    "Japan": "日本",
+    "South Korea": "韓國",
+    "Korea, Republic of": "韓國",
+    "Dem. Rep. Korea": "北韓",
+    "Singapore": "新加坡",
+    "Hong Kong": "香港",
+    "Macao": "澳門",
+    "China": "中國",
+    "Thailand": "泰國",
+    "Vietnam": "越南",
+    "Malaysia": "馬來西亞",
+    "Philippines": "菲律賓",
+    "Indonesia": "印尼",
+    "India": "印度",
+    "Mongolia": "蒙古",
+    "Turkey": "土耳其",
+    
+    "United States of America": "美國",
+    "United States": "美國",
+    "Canada": "加拿大",
+    "United Kingdom": "英國",
+    "Germany": "德國",
+    "France": "法國",
+    "Spain": "西班牙",
+    "Italy": "義大利",
+    "Netherlands": "荷蘭",
+    "Switzerland": "瑞士",
+    "Sweden": "瑞典",
+    "Norway": "挪威",
+    "Denmark": "丹麥",
+    "Finland": "芬蘭",
+    "Belgium": "比利時",
+    "Austria": "奧地利",
+    "Czechia": "捷克",
+    "Czech Republic": "捷克",
+    "Poland": "波蘭",
+    "Ireland": "愛爾蘭",
+    "Portugal": "葡萄牙",
+    "Hungary": "匈牙利",
+    "Lithuania": "立陶宛",
+    "Latvia": "拉脫維亞",
+    "Estonia": "愛沙尼亞",
+    
+    // 大洋洲與美洲
+    "Australia": "澳洲",
+    "New Zealand": "紐西蘭",
+    "Brazil": "巴西",
+    "Argentina": "阿根廷",
+    "Mexico": "墨西哥",
+    "Chile": "智利",
+    "Colombia": "哥倫比亞",
+    "Peru": "秘魯",
+    
+    // 中東與非洲
+    "Israel": "以色列",
+    "United Arab Emirates": "阿拉伯聯合大公國",
+    "Saudi Arabia": "沙烏地阿拉伯",
+    "South Africa": "南非",
+    "Egypt": "埃及"
+  };
+
+ // 1. 雙語學校資料結構
+const sampleData = [
+  {
+    nameZh: "中山醫學大學",
+    nameEn: "Chung Shan Medical University",
+    continentZh: "亞洲",
+    continentEn: "Asia",
+    countryZh: "臺灣",
+    countryEn: "Taiwan",
+    typeZh: "母校",
+    typeEn: "Home University",
+    levelZh: "校級",
+    levelEn: "University-level",
+    lat: 24.1228,
+    lng: 120.6517
+  },
+  {
+    "nameZh": "上海交通大學口腔醫學院",
+    "nameEn": "College of Stomatology, Shanghai Jiao Tong University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "31.2012930184908",
+    "lng": "121.494396140564"
+  },
+  {
+    "nameZh": "大連醫科大學",
+    "nameEn": "Dalian Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "38.8083279420257",
+    "lng": "121.31446829279"
+  },
+  {
+    "nameZh": "山東第一醫科大學",
+    "nameEn": "Taishan Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "36.128518128263",
+    "lng": "117.091677481578"
+  },
+  {
+    "nameZh": "中山大學中山醫學院",
+    "nameEn": "Zhongshan School of Medicine, Sun Yat-Sen University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.1575665942553",
+    "lng": "113.297657113432"
+  },
+  {
+    "nameZh": "中山大學新華學院",
+    "nameEn": "Xinhua College of Sun Yat-Sen University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.1939327091327",
+    "lng": "113.388239861263"
+  },
+  {
+    "nameZh": "北京大學口腔醫學院",
+    "nameEn": "College of Stomatology, Peking University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "39.957517470494",
+    "lng": "116.324586614261"
+  },
+  {
+    "nameZh": "四川大學",
+    "nameEn": "Sichuan University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "30.6308397424741",
+    "lng": "104.089739318692"
+  },
+  {
+    "nameZh": "石河子大學",
+    "nameEn": "Shihezi University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "44.307318880027",
+    "lng": "86.0580698732571"
+  },
+  {
+    "nameZh": "吉林大學",
+    "nameEn": "Ji Lin University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "43.8269175642035",
+    "lng": "125.287525033151"
+  },
+  {
+    "nameZh": "同濟大學口腔醫學院",
+    "nameEn": "College of Stomatology, Tongji University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "31.2738733083407",
+    "lng": "121.453800394219"
+  },
+  {
+    "nameZh": "安徽醫科大學",
+    "nameEn": "Anhui Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "31.8502091463664",
+    "lng": "117.262697198724"
+  },
+  {
+    "nameZh": "成都醫學院",
+    "nameEn": "Chengdu Medical College",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "30.7499995845224",
+    "lng": "104.113838949442"
+  },
+  {
+    "nameZh": "江漢大學",
+    "nameEn": "Jianghan University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "30.6029306150837",
+    "lng": "114.290991118677"
+  },
+  {
+    "nameZh": "昆明醫科大學",
+    "nameEn": "Kunming Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "25.0564038897518",
+    "lng": "102.682696772112"
+  },
+  {
+    "nameZh": "武漢大學",
+    "nameEn": "Wuhan University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "30.5382250446833",
+    "lng": "114.363532115829"
+  },
+  {
+    "nameZh": "南方醫科大學",
+    "nameEn": "Southern Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.1914225406696",
+    "lng": "113.365083045452"
+  },
+  {
+    "nameZh": "南京醫科大學",
+    "nameEn": "Nanjing Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "32.0558334029072",
+    "lng": "118.775223146173"
+  },
+  {
+    "nameZh": "首都醫科大學",
+    "nameEn": "Capital Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "39.8654233851625",
+    "lng": "116.352848669121"
+  },
+  {
+    "nameZh": "徐州醫科大學",
+    "nameEn": "Xuxhou Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "34.2647349807316",
+    "lng": "117.257665887879"
+  },
+  {
+    "nameZh": "桂林醫學院",
+    "nameEn": "Guilin Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "25.2198597879577",
+    "lng": "110.166981200743"
+  },
+  {
+    "nameZh": "湖南醫藥學院",
+    "nameEn": "Hunan University of Medical",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "27.5409357721998",
+    "lng": "110.002197693865"
+  },
+  {
+    "nameZh": "華中科技大學",
+    "nameEn": "Huazhong University of Science and Technology",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "30.514297912282",
+    "lng": "114.420447210693"
+  },
+  {
+    "nameZh": "溫州醫科大學",
+    "nameEn": "Wenzhou Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "27.9257523078479",
+    "lng": "120.712052863567"
+  },
+  {
+    "nameZh": "福建醫科大學",
+    "nameEn": "Fujian Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "26.0683838280076",
+    "lng": "119.299199539943"
+  },
+  {
+    "nameZh": "肇慶醫學高等專科學校",
+    "nameEn": "Zhao Qing Medical College",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.2116811721937",
+    "lng": "112.584702557127"
+  },
+  {
+    "nameZh": "廣州醫科大學",
+    "nameEn": "Guangzhou Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.1447026647088",
+    "lng": "113.25238608555"
+  },
+  {
+    "nameZh": "廣西醫科大學口腔醫學院",
+    "nameEn": "College of Stomatology, Guangxi Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "22.7996604774468",
+    "lng": "108.343284453897"
+  },
+  {
+    "nameZh": "廣東醫科大學",
+    "nameEn": "GuangDong Medical College",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.1760172566023",
+    "lng": "113.244616470209"
+  },
+  {
+    "nameZh": "廣東藥科大學",
+    "nameEn": "Guangdong Pharmarceutical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "23.0558823183929",
+    "lng": "113.405413861411"
+  },
+  {
+    "nameZh": "遵義醫科大學",
+    "nameEn": "Zunyi Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "27.7087115003181",
+    "lng": "106.947039355529"
+  },
+  {
+    "nameZh": "黔南民族醫學高等專科學校",
+    "nameEn": "Qiannan Medical College for Nationalities",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "26.2505916491496",
+    "lng": "107.524137169481"
+  },
+  {
+    "nameZh": "濱州醫學院",
+    "nameEn": "Binzhou Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "37.4603759888028",
+    "lng": "121.46124361489"
+  },
+  {
+    "nameZh": "麗水學院",
+    "nameEn": "Lishui University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "28.4579044005124",
+    "lng": "119.901427948481"
+  },
+  {
+    "nameZh": "蘭州大學",
+    "nameEn": "Lanzhou University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "36.0484981183455",
+    "lng": "103.858261945232"
+  },
+  {
+    "nameZh": "川村學園女子大學",
+    "nameEn": "Kawamura GakuenWoman's University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.8776234242524",
+    "lng": "140.053921391163"
+  },
+  {
+    "nameZh": "日本齒科大學",
+    "nameEn": "Nippon Dental University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "35.6985324250916",
+    "lng": "139.745953487512"
+  },
+  {
+    "nameZh": "甲子園大學",
+    "nameEn": "Koshien University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "34.8069043065844",
+    "lng": "135.33415480587"
+  },
+  {
+    "nameZh": "目白大學",
+    "nameEn": "Mejiro University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.7187487474668",
+    "lng": "139.680526310378"
+  },
+  {
+    "nameZh": "佐野日本大學短期大學",
+    "nameEn": "Sano Nihon University College",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "36.3029488403913",
+    "lng": "139.604941098831"
+  },
+  {
+    "nameZh": "東邦大學",
+    "nameEn": "Toho University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.655666478386",
+    "lng": "139.703318038135"
+  },
+  {
+    "nameZh": "東京醫科大學",
+    "nameEn": "Tokyo Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.6946375405092",
+    "lng": "139.712758772973"
+  },
+  {
+    "nameZh": "島根縣立大學",
+    "nameEn": "The University of Shimane",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "34.8850516464203",
+    "lng": "132.078758867294"
+  },
+  {
+    "nameZh": "神戶國際大學",
+    "nameEn": "Kobe International University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "34.6822093638769",
+    "lng": "135.270031875108"
+  },
+  {
+    "nameZh": "朝日大學(原岐阜齒科大學)",
+    "nameEn": "Asahi University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.3825222156121",
+    "lng": "136.690664582933"
+  },
+  {
+    "nameZh": "筑波大學人工智能中心",
+    "nameEn": "University of Tsukuba,Center for Artificial",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "36.1125410111224",
+    "lng": "140.101121737491"
+  },
+  {
+    "nameZh": "愛知學院大學牙醫學院",
+    "nameEn": "Aichi Gakuin UniversitySchool of Dentistry",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.1774787083576",
+    "lng": "136.961240215182"
+  },
+  {
+    "nameZh": "新潟醫療福祉大學",
+    "nameEn": "Niigata University of Health and Welfare",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "37.9666847501168",
+    "lng": "139.186828607797"
+  },
+  {
+    "nameZh": "德島文理大學",
+    "nameEn": "Tokushima Bunri University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "34.053456150359",
+    "lng": "134.557580597499"
+  },
+  {
+    "nameZh": "橫濱國際學校",
+    "nameEn": "Yokohama InternationalSchool",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "35.4349695949672",
+    "lng": "139.663897168467"
+  },
+  {
+    "nameZh": "九州齒科大學",
+    "nameEn": "Kyushu Dental University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "33.873845612439",
+    "lng": "130.853542204921"
+  },
+  {
+    "nameZh": "印尼大學牙醫學院",
+    "nameEn": "Universitas IndonesiaFaculty of Dentistry",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "印尼",
+    "countryEn": "Indonesia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "-5.69633203134083",
+    "lng": "106.825518185523"
+  },
+  {
+    "nameZh": "迪波內戈羅大學",
+    "nameEn": "Universitas Diponegoro",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "印尼",
+    "countryEn": "Indonesia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "-7.05102539089611",
+    "lng": "110.440977372492"
+  },
+  {
+    "nameZh": "朱拉隆功大學健康科學學院",
+    "nameEn": "Chulalongkorn University, Faculty of Allied Health Sciences",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "泰國",
+    "countryEn": "Thailand",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "13.7397734212028",
+    "lng": "100.532305804422"
+  },
+  {
+    "nameZh": "清邁大學醫學院",
+    "nameEn": "Faculty of Medicine, Chiang Mai University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "泰國",
+    "countryEn": "Thailand",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "18.79080960778",
+    "lng": "98.973297375189"
+  },
+  {
+    "nameZh": "清邁大學牙醫學院",
+    "nameEn": "Faculty of Dentistry, Chiang Mai University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "泰國",
+    "countryEn": "Thailand",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "18.7905205527237",
+    "lng": "98.9680462751889"
+  },
+  {
+    "nameZh": "瑪希敦大學牙醫學院",
+    "nameEn": "Mahidol University Facultyof Dentistry",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "泰國",
+    "countryEn": "Thailand",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "13.7651166050806",
+    "lng": "100.533148412361"
+  },
+  {
+    "nameZh": "拉曼大學",
+    "nameEn": "Universiti Tunku Abdul Rahman",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "馬來西亞",
+    "countryEn": "Malaysia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "4.33590604392234",
+    "lng": "101.135260387559"
+  },
+  {
+    "nameZh": "馬來亞大學",
+    "nameEn": "University of Malaya",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "馬來西亞",
+    "countryEn": "Malaysia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "3.12278378236344",
+    "lng": "101.656650818688"
+  },
+  {
+    "nameZh": "荷甘伯紀念學院",
+    "nameEn": "De Ocampo MemorialCollege",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "菲律賓",
+    "countryEn": "Philippines",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "14.6026025612766",
+    "lng": "121.004178465495"
+  },
+  {
+    "nameZh": "聖母法蒂瑪大學",
+    "nameEn": "Our Lady of Fatima University ",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "菲律賓",
+    "countryEn": "Philippines",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "14.6869587602096",
+    "lng": "120.979241046382"
+  },
+  {
+    "nameZh": "本格特州立大學",
+    "nameEn": "Benguet State University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "菲律賓",
+    "countryEn": "Philippines",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "16.4564736250953",
+    "lng": "120.590398932391"
+  },
+  {
+    "nameZh": "馬尼拉中央大學",
+    "nameEn": "Manila Central University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "菲律賓",
+    "countryEn": "Philippines",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "14.6599135764606",
+    "lng": "120.986290358621"
+  },
+  {
+    "nameZh": "同塔高專護校",
+    "nameEn": "Dong Thap Medical College",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "越南",
+    "countryEn": "Vietnam",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "10.44966931865",
+    "lng": "105.63562562699"
+  },
+  {
+    "nameZh": "芹苴醫藥大學",
+    "nameEn": "Can Tho University of Medicine and Pharmacy",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "越南",
+    "countryEn": "Vietnam",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "10.0357040224362",
+    "lng": "105.755798103115"
+  },
+  {
+    "nameZh": "河內醫科大學",
+    "nameEn": "Hanoi Medical University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "越南",
+    "countryEn": "Vietnam",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "21.0045181224079",
+    "lng": "105.830372753208"
+  },
+  {
+    "nameZh": "蒙古健康科學大學",
+    "nameEn": "Health Sciences Universityof Mongolia",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "蒙古",
+    "countryEn": "Mongolia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "47.9165717039533",
+    "lng": "106.9225634301"
+  },
+  {
+    "nameZh": "澳門理工大學",
+    "nameEn": "Macao Polytechnic University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "澳門",
+    "countryEn": "Macau",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "22.1942965119774",
+    "lng": "113.551744087472"
+  },
+  {
+    "nameZh": "嶺南大學",
+    "nameEn": "Yeungnam University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "南韓",
+    "countryEn": "South Korea",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.833619681318",
+    "lng": "128.757185214414"
+  },
+  {
+    "nameZh": "蘇萊曼德米雷爾大學",
+    "nameEn": "Süleyman Demirel University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "土耳其",
+    "countryEn": "Turkey",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "37.8298101835785",
+    "lng": "30.5263677690893"
+  },
+  {
+    "nameZh": "中佛羅里達大學",
+    "nameEn": "University of CentralFlorida",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "28.6030675361454",
+    "lng": "-81.2001886974809"
+  },
+  {
+    "nameZh": "天普大學牙醫學院",
+    "nameEn": "Kornberg School of Dentistry, Temple University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "40.0028955686325",
+    "lng": "-75.1523736295074"
+  },
+  {
+    "nameZh": "加州州立大學富勒頓分校",
+    "nameEn": "California State University,Fullerton",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "33.8828556784446",
+    "lng": "-117.885258263976"
+  },
+  {
+    "nameZh": "生命大學",
+    "nameEn": "Life University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "33.9320173190287",
+    "lng": "-84.5173406179148"
+  },
+  {
+    "nameZh": "安德魯大學企管學院",
+    "nameEn": "The school of BusinessAdministration, Andrews",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "42.3607278894262",
+    "lng": "-86.2327017382443"
+  },
+  {
+    "nameZh": "佛羅里達國際大學",
+    "nameEn": "Florida InternationalUniversity",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "25.7572124272883",
+    "lng": "-80.3755830681292"
+  },
+  {
+    "nameZh": "明尼蘇達大學醫學院",
+    "nameEn": "The Medical School,University of Minnesota",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "44.9729937616774",
+    "lng": "-93.2335380720914"
+  },
+  {
+    "nameZh": "阿拉巴馬大學伯明罕分校",
+    "nameEn": "University of Alabama at Birmingham",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "33.502765498282",
+    "lng": "-86.8053305102267"
+  },
+  {
+    "nameZh": "南加州大學牙醫學院",
+    "nameEn": "School of Dentistry, University of Southern California",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "34.0248244761184",
+    "lng": "-118.286483409928"
+  },
+  {
+    "nameZh": "韋恩州立大學",
+    "nameEn": "Wayne State University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "42.3577949024313",
+    "lng": "-83.0646603665356"
+  },
+  {
+    "nameZh": "馬里蘭大學東岸分校",
+    "nameEn": "University of MarylandEastern Shore",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "38.2110591598226",
+    "lng": "-75.6847144153248"
+  },
+  {
+    "nameZh": "馬里蘭大學護理學院",
+    "nameEn": "School of Nursing,University of Maryland",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "39.2874861605295",
+    "lng": "-76.625390306699"
+  },
+  {
+    "nameZh": "華盛頓大學牙醫學院",
+    "nameEn": "School of Dentistry, University of Washington",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "47.6513466414873",
+    "lng": "-122.308499162168"
+  },
+  {
+    "nameZh": "塔夫茨大學醫學院",
+    "nameEn": "Tufts University School ofMedicine",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "42.3507530096203",
+    "lng": "-71.0624992858516"
+  },
+  {
+    "nameZh": "奧克蘭大學",
+    "nameEn": "Oakland University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "42.6684772888134",
+    "lng": "-83.2082347430422"
+  },
+  {
+    "nameZh": "新英格蘭大學",
+    "nameEn": "University of New England",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "43.5411888760801",
+    "lng": "-70.3488726247072"
+  },
+  {
+    "nameZh": "聖馬丁大學",
+    "nameEn": "Saint Martin's University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "47.0416916855296",
+    "lng": "-122.815836608662"
+  },
+  {
+    "nameZh": "聖路易大學",
+    "nameEn": "Saint Louis University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "38.6239163206941",
+    "lng": "-90.2353918839179"
+  },
+  {
+    "nameZh": "賓州大學牙醫學院",
+    "nameEn": "School of Dental Medicine, University of Pennsylvania",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "39.9533034959416",
+    "lng": "-75.2031846755735"
+  },
+  {
+    "nameZh": "德州大學休士頓醫學中心",
+    "nameEn": "University of Texas healthscience center at Houston",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "29.7032035645316",
+    "lng": "-95.4022351688137"
+  },
+  {
+    "nameZh": "薛頓賀爾大學健康醫學學院",
+    "nameEn": "Seton Hall University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "40.743668901416",
+    "lng": "-74.2462107903919"
+  },
+  {
+    "nameZh": "薩盧斯大學",
+    "nameEn": "Salus University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "40.0870941757299",
+    "lng": "-75.1289346834182"
+  },
+  {
+    "nameZh": "杜肯大學",
+    "nameEn": "Duquesne University",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "40.4376666413026",
+    "lng": "-79.9903863905967"
+  },
+  {
+    "nameZh": "溫莎大學醫學院",
+    "nameEn": "Windsor University Schoolof Medicine",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "聖克里斯多福及尼維斯",
+    "countryEn": "St. Kitts and Nevis",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "17.3601084233332",
+    "lng": "-62.7368192173345"
+  },
+  {
+    "nameZh": "德布勒森大學醫學與健康科學中心",
+    "nameEn": "University of Debrecen,Medical and Health Science",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "匈牙利",
+    "countryEn": "Hungary",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "47.5572716445192",
+    "lng": "21.6280208531046"
+  },
+  {
+    "nameZh": "瑞耶卡大學醫學院",
+    "nameEn": "University of Rijeka-Schoolof Medicine",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "克羅埃西亞",
+    "countryEn": "Croatia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "45.336541221255",
+    "lng": "14.4293061263613"
+  },
+  {
+    "nameZh": "視光高等學院",
+    "nameEn": "INSTITUT SUPERIEUR D’OPTIQUE",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "法國",
+    "countryEn": "France",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "48.8276",
+    "lng": "2.3432"
+  },
+  {
+    "nameZh": "華沙醫學大學",
+    "nameEn": "Medical University ofWarsaw",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "波蘭",
+    "countryEn": "Poland",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "52.2094606987093",
+    "lng": "20.9864722948589"
+  },
+  {
+    "nameZh": "猶瓦斯庫拉科技大學",
+    "nameEn": "University of Jyväskylä",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "芬蘭",
+    "countryEn": "Finland",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "62.2369111437691",
+    "lng": "25.7318910648819"
+  },
+  {
+    "nameZh": "考門斯基大學",
+    "nameEn": "Comenius University in Bratislava",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "斯洛伐克",
+    "countryEn": "Slovakia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "48.1417927195068",
+    "lng": "17.1158787302724"
+  },
+  {
+    "nameZh": "維也納醫學大學",
+    "nameEn": "Medical University of Vienna",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "奧地利",
+    "countryEn": "Austria",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "48.2204162587021",
+    "lng": "16.347404114988"
+  },
+  {
+    "nameZh": "伯恩大學醫學院",
+    "nameEn": "Faculty of Medicine, University of Bern",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "瑞士",
+    "countryEn": "Switzerland",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "46.9496963672931",
+    "lng": "7.42650361478317"
+  },
+  {
+    "nameZh": "庫爾斯克國立醫科大學",
+    "nameEn": "Kursk State Medical University",
+    "continentZh": "歐洲",
+    "continentEn": "Europe",
+    "countryZh": "俄羅斯",
+    "countryEn": "Russia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "51.7494473013968",
+    "lng": "36.1946477870753"
+  },
+  {
+    "nameZh": "阿克拉醫學院",
+    "nameEn": "Accra College Of Medicine",
+    "continentZh": "非洲",
+    "continentEn": "Africa",
+    "countryZh": "迦納",
+    "countryEn": "Ghana",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "5.64960236153456",
+    "lng": "-0.140060373700828"
+  },
+  {
+    "nameZh": "SRM科技大學",
+    "nameEn": "SRM Institute of Science and Technology (SRMIST)",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "印度",
+    "countryEn": "India",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "12.8333141011997",
+    "lng": "80.0455050060307"
+  },
+  {
+    "nameZh": "弘前醫療福祉大學",
+    "nameEn": "Hirosaki University of Health and Welfare",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "40.5892785380605",
+    "lng": "140.500526316916"
+  },
+  {
+    "nameZh": "順天堂大學",
+    "nameEn": "Juntendo University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.7032165023756",
+    "lng": "139.760533175713"
+  },
+  {
+    "nameZh": "新南威爾斯大學",
+    "nameEn": "University of New South Wales",
+    "continentZh": "大洋洲",
+    "continentEn": "Oceania",
+    "countryZh": "澳大利亞",
+    "countryEn": "Australia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "-33.9167055346645",
+    "lng": "151.23109579001"
+  },
+  {
+    "nameZh": "太平洋大學視光學院",
+    "nameEn": "PACIFIC UNIVERSITY COLLEGE OF OPTOMETRY",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "45.5247679369113",
+    "lng": "-123.110282325655"
+  },
+  {
+    "nameZh": "墨爾本大學視光學系",
+    "nameEn": "THE UNIVERSITY OF MELBOURNE",
+    "continentZh": "大洋洲",
+    "continentEn": "Oceania",
+    "countryZh": "澳大利亞",
+    "countryEn": "Australia",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "-37.7976333270375",
+    "lng": "144.961145615103"
+  },
+  {
+    "nameZh": "皇太后大學",
+    "nameEn": "Mae Fah Luang University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "泰國",
+    "countryEn": "Thailand",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "20.0459144758416",
+    "lng": "99.8942173988959"
+  },
+  {
+    "nameZh": "加州州立大學長堤分校語言病理學系",
+    "nameEn": "DEPARTMENT OF SPEECH-LANGUAGE PATHOLOGY OF CALIFORNIA STATE UNIVERSITY",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "姊妹校",
+    "typeEn": "Partner University",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "34.1220823250638",
+    "lng": "-118.059902565915"
+  },
+  {
+    "nameZh": "廈門大學附屬中山醫院",
+    "nameEn": "Zhongshan Hospital, Xiamen University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "大陸地區",
+    "countryEn": "China",
+    "typeZh": "海外醫療機構",
+    "typeEn": "Medical Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "24.4776997557755",
+    "lng": "118.097239167806"
+  },
+  {
+    "nameZh": "澳門鏡湖醫院慈善會",
+    "nameEn": "King Wu Hospital",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "澳門",
+    "countryEn": "Macau",
+    "typeZh": "海外醫療機構",
+    "typeEn": "Medical Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "22.1998313187492",
+    "lng": "113.542702499903"
+  },
+  {
+    "nameZh": "新加坡中央醫院",
+    "nameEn": "Singapore General Hospital",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "新加坡",
+    "countryEn": "Singapore",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "1.28079488117079",
+    "lng": "103.834496279994"
+  },
+  {
+    "nameZh": "國立大學醫院",
+    "nameEn": "National University Hospital",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "新加坡",
+    "countryEn": "Singapore",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "1.29460927142893",
+    "lng": "103.783444848783"
+  },
+  {
+    "nameZh": "竹腳婦幼醫院",
+    "nameEn": "KK Women's and Children's Hospital",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "新加坡",
+    "countryEn": "Singapore",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "1.31175769382756",
+    "lng": "103.846504333961"
+  },
+  {
+    "nameZh": "仁愛醫療集團",
+    "nameEn": "AHMC Healthcare Inc.",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "34.1006745257068",
+    "lng": "-118.127357421655"
+  },
+  {
+    "nameZh": "AI Smart Care LLC.",
+    "nameEn": "AI Smart Care LLC.",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "34.0816484512945",
+    "lng": "-118.150234766383"
+  },
+  {
+    "nameZh": "埃佛勒斯峰養老機構",
+    "nameEn": "Everest Senior Living",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "34.1601850780166",
+    "lng": "-118.136890324028"
+  },
+  {
+    "nameZh": "塔夫茨大學 Gerald J. 和 Dorothy R. Friedman 營養科學與政策學院",
+    "nameEn": "The Gerald J. and Dorothy R. Friedman School of Nutrition Science and Policy, Tufts University, USA",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "42.3502502485827",
+    "lng": "-71.0618960586078"
+  },
+  {
+    "nameZh": "阿赫馬達蘭大學公衛系",
+    "nameEn": "Universitas Ahmade Dahlan (UAD)",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "印尼",
+    "countryEn": "Indonesia",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "系級",
+    "levelEn": "Department-level",
+    "lat": "-7.79784985233506",
+    "lng": "110.383050282614"
+  },
+  {
+    "nameZh": "路易斯安那州立大學健康科學中心 公共衛生學院(LSU)",
+    "nameEn": "School of Public Health, Louisiana State University Health Sciences Center New Orleans",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "29.9574201991738",
+    "lng": "-90.083526881455"
+  },
+  {
+    "nameZh": "印尼大學",
+    "nameEn": "Universitas Indonesia",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "印尼",
+    "countryEn": "Indonesia",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "-6.35968447149278",
+    "lng": "106.827148411031"
+  },
+  {
+    "nameZh": "東方國際大學",
+    "nameEn": "Eastern International University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "越南",
+    "countryEn": "Vietnam",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "11.0532446957632",
+    "lng": "106.666380896417"
+  },
+  {
+    "nameZh": "和泉大學",
+    "nameEn": "Izumi University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "35.9385114655918",
+    "lng": "139.507099069007"
+  },
+  {
+    "nameZh": "富山大學 醫學院、跨領域醫藥理工研究院、醫學與藥學研究院",
+    "nameEn": "School of Medicine, Interdisciplinary Graduate School of Medicine, Pharmacy, Science and Engineering, and Graduate School of Medicine and Pharmaceutical Sciences, University of Toyama",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "36.7106706441406",
+    "lng": "137.188407549797"
+  },
+  {
+    "nameZh": "宮崎縣立看護大學",
+    "nameEn": "Miyazaki Prefectural Nursing University",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "日本",
+    "countryEn": "Japan",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "31.8600720319803",
+    "lng": "131.414657119549"
+  },
+  {
+    "nameZh": "日惹 AMIKOM 大學",
+    "nameEn": "Universitas of Amikom Yogyakarta",
+    "continentZh": "亞洲",
+    "continentEn": "Asia",
+    "countryZh": "印尼",
+    "countryEn": "Indonesia",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "校級",
+    "levelEn": "University-level",
+    "lat": "-7.75919951632287",
+    "lng": "110.409222234171"
+  },
+  {
+    "nameZh": "墨爾本大學健康科學院",
+    "nameEn": "The University of Melbourne-Melbourne School of Health Sciences",
+    "continentZh": "大洋洲",
+    "continentEn": "Oceania",
+    "countryZh": "澳大利亞",
+    "countryEn": "Australia",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "-37.799776593504",
+    "lng": "144.959564681555"
+  },
+  {
+    "nameZh": "馬里蘭大學牙醫學院",
+    "nameEn": "UNIVERSITY OF MARYLAND, SCHOOL OF DENTISTRY,UNIVERSITY OF MARYLAND, BALTIMORE,UNITED STATES OF AMERICA",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "39.2902343221313",
+    "lng": "-76.6254500146304"
+  },
+  {
+    "nameZh": "俄亥俄州立大學牙醫學院",
+    "nameEn": "THE OHIO STATE UNIVERSITY, COLLEGE OF DENTISTRY COLUMBUS, OHIO, U.S.A.",
+    "continentZh": "美洲",
+    "continentEn": "Americas",
+    "countryZh": "美國",
+    "countryEn": "USA",
+    "typeZh": "海外實習機構",
+    "typeEn": "Internship Institution",
+    "levelZh": "院級",
+    "levelEn": "College-level",
+    "lat": "39.9973055222706",
+    "lng": "-83.0166312688278"
+  }
+];
+// 轉為數字格式以確保 Globe.gl 正確讀取經緯度
+  sampleData.forEach(d => {
+    d.lat = parseFloat(d.lat);
+    d.lng = parseFloat(d.lng);
+
+    // 自動將「大陸地區」轉為「中國」
+  if (d.countryZh === '大陸地區') {
+    d.countryZh = '中國';
+  }
+});
+
+  // ✈️ 1. 在中間插入飛線資料計算：設定從母校（陣列第 0 個）連到其他學校
+  const myHome = sampleData[0];
+  const sisterSchools = sampleData.slice(1);
+
+  const arcData = sisterSchools.map(school => ({
+    startLat: myHome.lat,
+    startLng: myHome.lng,
+    endLat: school.lat,
+    endLng: school.lng,
+    color: ['#f43f5e', '#38bdf8']
+  }));
+
+  const world = Globe()(document.getElementById('globeViz'))
+    // 1. 換成明亮高畫質藍色大理石衛星圖
+    .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+    
+    // 2. 加入立體地形光影
+    .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+    
+    // 3. 背景維持透明，透出後方雲霧
+    .backgroundColor('rgba(0,0,0,0)')
+    
+    // 4. 調亮並加厚大氣層光暈
+    .atmosphereColor('#38bdf8')
+    .atmosphereAltitude(0.25)
+    
+  // 📍 5. 點位與懸停標籤設定
+   .htmlElementsData(sampleData)
+    .htmlElement(d => {
+        const el = document.createElement('div');
+        el.className = 'globe-marker';
+        el.id = `marker-${d.lat}-${d.lng}`;
+
+        // 放入圓點與懸停卡片 HTML 結構
+        el.innerHTML = `
+            <div class="marker-dot" style="background-color: ${getTypeColor(d)};"></div>
+            <div class="marker-tooltip">
+                <strong>${d.nameZh}</strong>
+                <span>${d.nameEn}</span>
+            </div>
+        `;
+
+        el.onclick = () => focusSchool(d.lat, d.lng);
+        return el;
+    })
+        
+
+    // ✈️ 飛線動畫設定 (全面輕量化)
+    .arcsData(arcData)
+    
+    // 飛線顏色調整為更淡、更透明，讓地球本身主導視覺
+    // 從 `#ef4444`（母校紅）和 `#a855f7`（姊妹校紫）改為更淡的顏色與較高透明度
+    .arcColor(() => ['rgba(239, 68, 68, 0.4)', 'rgba(168, 85, 247, 0.4)']) // 母校紅(透明0.4), 姊妹校紫(透明0.4)
+    
+    // 縮細線條粗細，讓飛線看起來更精緻
+    .arcStroke(0.15) 
+    .arcDashLength(0.3)
+    .arcDashGap(0.2)
+    .arcDashAnimateTime(6000) // 動畫速度調整
+    .arcAltitude(0.2)
+
+    (document.getElementById('globeViz'));
+
+        // 🎨 根據機構類型回傳顏色
+        function getTypeColor(school) {
+           // 若資料包含母校標記，優先給予鮮紅色
+           if (school.isHome || school.nameZh.includes('中山醫')) {
+             return '#ef4444'; // 🔴 鮮紅色 (母校專屬)
+           }
+
+           switch (school.typeZh) {
+             case '海外醫療機構':
+              return '#06b6d4'; // 🔷 青藍 / 綠松石色 (醫療機構)
+             case '海外實習機構':
+              return '#f97316'; // 🟠 暖橙色 (實習機構)
+             case '姊妹校':
+            default:
+              return '#a855f7'; // 🟣 亮紫色 (姊妹校)
+  }
+}
+      
+
+
+
+    // 控制旋轉與鏡頭
+    world.controls().autoRotate = true;
+    world.controls().autoRotateSpeed = 0.6;
+    world.pointOfView({ lat: 20, lng: 120, altitude: 2.3 });
+    // 🎯 鏡頭平滑飛往指定學校
+function focusSchool(lat, lng) {
+    // 1. 停止自動旋轉
+    world.controls().autoRotate = false;
+
+    // 2. 移除先前所有點位的高亮與開啟狀態
+    document.querySelectorAll('.globe-marker').forEach(el => {
+        el.classList.remove('active-focus');
+    });
+
+    // 3. 視角平滑旋轉聚焦到該座標
+    world.pointOfView({ lat: lat, lng: lng, altitude: 0.8 }, 1500);
+
+    // 4. 尋找對應的 HTML Marker 並加上高亮 Class
+    const targetId = `marker-${lat}-${lng}`;
+    const targetEl = document.getElementById(targetId);
+
+    if (targetEl) {
+        targetEl.classList.add('active-focus');
+
+        // 5. 設定 4 秒後自動停止波浪動畫（卡片會保持顯示或依需求隨動畫結束）
+        setTimeout(() => {
+            targetEl.classList.remove('active-focus');
+        }, 4000);
+    }
+}
+
+// 🌐 載入全球國家邊界與雙語地名提示
+    fetch('https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson')
+      .then(res => res.json())
+      .then(countries => {
+        world.polygonsData(countries.features)
+          .polygonCapColor(() => 'rgba(56, 189, 248, 0.05)')
+          .polygonSideColor(() => 'rgba(255, 255, 255, 0.02)')
+          .polygonStrokeColor(() => 'rgba(255, 255, 255, 0.3)')
+          .polygonLabel(({ properties: d }) => {
+            const enName = d.NAME_LONG || d.NAME;
+            const zhName = countryTranslations[d.NAME] || countryTranslations[d.NAME_LONG] || enName;
+            
+            // 根據目前語系，呈現主標題與副標題
+            const mainName = currentLang === 'zh' ? zhName : enName;
+            const subName = currentLang === 'zh' ? enName : (zhName !== enName ? zhName : '');
+
+            return `
+              <div style="background: rgba(15, 23, 42, 0.9); padding: 6px 10px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.3); font-size: 12px; color: #fff; pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
+                <div style="font-weight: 600; color: #38bdf8;">${mainName}</div>
+                ${subName ? `<div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">${subName}</div>` : ''}
+              </div>
+            `;
+          });
+      });
+
+    // 📋 渲染雙語側邊欄清單
+    function renderSchoolList(data) {
+      const listEl = document.getElementById('schoolList');
+      listEl.innerHTML = '';
+      
+      data.forEach(school => {
+        const li = document.createElement('li');
+        li.className = 'school-item';
+        
+        const mainName = currentLang === 'zh' ? school.nameZh : school.nameEn;
+        const subName = currentLang === 'zh' ? school.nameEn : school.nameZh;
+        const country = currentLang === 'zh' ? school.countryZh : school.countryEn;
+
+        li.innerHTML = `
+          <div class="school-info">
+            <span class="school-name">${mainName}</span>
+            <span class="school-subname">${subName}</span>
+          </div>
+          <span class="school-country">${country}</span>
+        `;
+        li.onclick = () => focusSchool(school.lat, school.lng);
+        listEl.appendChild(li);
+      });
+    }
+
+    // 🌐 切換洲別時，連動更新「國家/地區」下拉選單
+    function onContinentChange() {
+      const selectedContinent = document.getElementById('continentSelect').value;
+      const countrySelect = document.getElementById('countrySelect');
+      
+      // 清空選單並重置預設選項（將預設文字改為 國家/地區）
+      const defaultText = currentLang === 'zh' ? '所有國家/地區' : 'All Countries/Regions';
+      countrySelect.innerHTML = `<option value="">${defaultText}</option>`;
+      
+      // 依選取的洲別篩選出不重複的國家/地區
+      const availableCountries = [...new Set(
+        sampleData
+          .filter(s => !selectedContinent || s.continentZh === selectedContinent)
+          .map(s => currentLang === 'zh' ? s.countryZh : s.countryEn)
+      )];
+
+      // 動態加入選項
+      availableCountries.forEach(country => {
+        const opt = document.createElement('option');
+        opt.value = country;
+        opt.innerText = country;
+        countrySelect.appendChild(opt);
+      });
+
+      // 觸發重新過濾清單與點位
+      filterSchools();
+    }
+
+    // 🔍 複合過濾邏輯（關鍵字 + 洲別 + 國家 + 類型 + 範圍）
+    function filterSchools() {
+
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      const selectedContinent = document.getElementById('continentSelect').value;
+      const selectedCountry = document.getElementById('countrySelect').value;
+      const selectedType = document.getElementById('typeSelect').value;
+      const selectedLevel = document.getElementById('levelSelect').value;
+
+      const filtered = sampleData.filter(s => {
+        const matchQuery = s.nameZh.toLowerCase().includes(query) || 
+
+                           s.nameEn.toLowerCase().includes(query) ||
+
+                           s.countryZh.toLowerCase().includes(query) ||
+
+                           s.countryEn.toLowerCase().includes(query);
+
+                           
+
+        const matchContinent = !selectedContinent || s.continentZh === selectedContinent;
+        const matchCountry = !selectedCountry || (s.countryZh === selectedCountry || s.countryEn === selectedCountry);
+        const matchType = !selectedType || s.typeZh === selectedType;
+        const matchLevel = !selectedLevel || s.levelZh === selectedLevel;
+
+        return matchQuery && matchContinent && matchCountry && matchType && matchLevel; 
+       });
+
+
+      // 更新左側清單與 3D 地球上的標記
+      renderSchoolList(filtered);
+      world.htmlElementsData(filtered);
+
+    }
+
+    // 🌐 切換語系 (中 / EN)
+    function toggleLanguage() {
+      currentLang = currentLang === 'zh' ? 'en' : 'zh';
+
+      // 更新 UI 文字
+      document.getElementById('langBtn').innerText = currentLang === 'zh' ? 'EN' : '中文';
+      document.getElementById('titleText').innerText = currentLang === 'zh' ? '全球姊妹校地圖' : 'Global Partner Universities';
+      document.getElementById('subTitleText').innerText = currentLang === 'zh' ? '點擊學校名稱可自動平滑定位' : 'Click a university to fly to location';
+      document.getElementById('searchInput').placeholder = currentLang === 'zh' ? '搜尋學校或國家...' : 'Search university or country...';
+
+      // 🌐 動態更新洲別選單標籤
+      const continentSelect = document.getElementById('continentSelect');
+      const continentOptions = currentLang === 'zh' 
+        ? ['所有洲別', '亞洲', '美洲', '歐洲', '大洋洲', '非洲']
+        : ['All Continents', 'Asia', 'Americas', 'Europe', 'Oceania', 'Africa'];
+      
+      Array.from(continentSelect.options).forEach((opt, index) => {
+        opt.innerText = continentOptions[index];
+      });
+
+      // 🌐 動態更新類型選單標籤 (新增)
+      const typeSelect = document.getElementById('typeSelect');
+      if (typeSelect) {
+      const typeOptions = currentLang === 'zh'
+        ? ['所有類型', '姊妹校', '海外醫療機構', '海外實習機構']
+        : ['All Types', 'Partner Universities', 'Medical Institutions', 'Internship Institutions'];
+
+      Array.from(typeSelect.options).forEach((opt, index) => {
+        if (typeOptions[index]) {
+        opt.innerText = typeOptions[index];
+      }
+    });
+  }
+
+      // 🌐 動態更新層級選單標籤
+      const levelSelect = document.getElementById('levelSelect');
+      if (levelSelect) {
+        const levelOptions = currentLang === 'zh'
+          ? ['所有層級', '校級', '院級', '系級']
+          : ['All Levels', 'University-level', 'College-level', 'Department-level'];
+
+        Array.from(levelSelect.options).forEach((opt, index) => {
+          if (levelOptions[index]) {
+            opt.innerText = levelOptions[index];
+          }
+        });
+      }
+
+
+      // 重新渲染國家下拉選單標籤與語言
+      onContinentChange();
+    }
+
+
+    // 初始化側邊欄清單與國家選單
+    onContinentChange();
+    renderSchoolList(sampleData);
+  </script>
+</body>
+</html>
